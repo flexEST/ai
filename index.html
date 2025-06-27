@@ -2,171 +2,51 @@
 <html lang="az">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Azərbaycan Səsli Köməkçi</title>
-  <style>
-    body {
-      margin: 0;
-      background: white;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-    }
-    #videoContainer {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 300px;
-      height: auto;
-      z-index: 10;
-    }
-    video {
-      width: 100%;
-      height: auto;
-      border-radius: 12px;
-    }
-    #textDisplay {
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      background: rgba(0,0,0,0.7);
-      color: white;
-      padding: 15px;
-      border-radius: 8px;
-      max-width: 300px;
-      display: none;
-    }
-    #searchAnimation {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 24px;
-      color: #333;
-      display: none;
-    }
-    .search-dots::after {
-      content: '.';
-      animation: dots 1.5s steps(5, end) infinite;
-    }
-    @keyframes dots {
-      0%, 20% { content: '.'; }
-      40% { content: '..'; }
-      60% { content: '...'; }
-      80%, 100% { content: ''; }
-    }
-  </style>
+  <title>ChatGPT Səsli Köməkçi</title>
 </head>
 <body>
-  <div id="textDisplay"></div>
-  <div id="searchAnimation">
-    <div class="search-dots">Axtarılır</div>
-  </div>
-  <div id="videoContainer" style="display: none;">
-    <video id="video" muted loop></video>
-  </div>
+  <button onclick="startAssistant()">🎙️ Başla</button>
+  <p id="status">Hazırdır</p>
 
   <script>
-    const video = document.getElementById("video");
-    const container = document.getElementById("videoContainer");
-    const textDisplay = document.getElementById("textDisplay");
-    const searchAnimation = document.getElementById("searchAnimation");
-
-    const videos = {
-      idle: "videos/idle.mp4",        // boş dayanma videosu
-      talking: "videos/talking.mp4"   // danışan video
-    };
-
-    function playVideo(src, isLoop = true) {
-      video.src = src;
-      video.loop = isLoop;
-      video.muted = true;
-      video.play();
-    }
-
-    function showSearchAnimation() {
-      searchAnimation.style.display = "block";
-      setTimeout(() => {
-        searchAnimation.style.display = "none";
-      }, 1500);
-    }
-
-    function startAssistantFlow() {
-      container.style.display = "block";
-      playVideo(videos.talking, false);
-      const welcome = new SpeechSynthesisUtterance("Salam, mən burdayam. Buyur sualını ver.");
-      welcome.lang = "az-AZ";
-      welcome.onend = () => {
-        playVideo(videos.idle);
-        startRecognition();
-      };
-      speechSynthesis.speak(welcome);
-    }
-
-    function respondToCommand(text) {
-      textDisplay.textContent = "Siz dediniz: " + text;
-      textDisplay.style.display = "block";
-      setTimeout(() => { textDisplay.style.display = "none"; }, 3000);
-
-      showSearchAnimation();
-      playTalkingWithGPT(text);
-    }
-
-    async function playTalkingWithGPT(userText) {
-      video.loop = false;
-      video.src = videos.talking;
-      video.muted = true;
-      video.play();
-
-      try {
-        const res = await fetch("/ask", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userText })
-        });
-
-        const data = await res.json();
-        const reply = data.reply || "Bağışlayın, cavab verə bilmədim.";
-
-        const utterance = new SpeechSynthesisUtterance(reply);
-        utterance.lang = "az-AZ";
-        utterance.onend = () => {
-          video.pause();
-          playVideo(videos.idle);
-          startRecognition();
-        };
-        speechSynthesis.speak(utterance);
-
-      } catch (err) {
-        console.error("Xəta:", err);
-        playVideo(videos.idle);
-        startRecognition();
-      }
-    }
-
-    function startRecognition() {
+    async function startAssistant() {
+      document.getElementById("status").innerText = "Danışın...";
       const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
       recognition.lang = "az-AZ";
       recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
 
-      recognition.onresult = function (event) {
-        const transcript = event.results[0][0].transcript;
-        respondToCommand(transcript);
+      recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        document.getElementById("status").innerText = "Axtarılır: " + text;
+
+        const res = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text })
+        });
+
+        const data = await res.json();
+        document.getElementById("status").innerText = "Cavab: " + data.reply;
+
+        // Play TTS audio (OpenAI voice)
+        const audioRes = await fetch("/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: data.reply })
+        });
+
+        const audioBlob = await audioRes.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play();
       };
 
-      recognition.onerror = function (event) {
-        console.error("Səs tanıma xətası:", event.error);
-        startRecognition();
+      recognition.onerror = (e) => {
+        document.getElementById("status").innerText = "Xəta: " + e.error;
       };
 
       recognition.start();
     }
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key.toLowerCase() === "f") {
-        startAssistantFlow();
-      }
-    });
   </script>
 </body>
 </html>
