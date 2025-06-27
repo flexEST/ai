@@ -2,51 +2,164 @@
 <html lang="az">
 <head>
   <meta charset="UTF-8" />
-  <title>ChatGPT Səsli Köməkçi</title>
+  <title>Səsli ChatGPT Köməkçi</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: white;
+    }
+    #videoContainer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 300px;
+      display: none;
+    }
+    video {
+      width: 100%;
+      border-radius: 12px;
+    }
+  </style>
 </head>
 <body>
-  <button onclick="startAssistant()">🎙️ Başla</button>
-  <p id="status">Hazırdır</p>
+  <div id="videoContainer">
+    <video id="video" muted></video>
+  </div>
 
   <script>
+    const video = document.getElementById("video");
+    const container = document.getElementById("videoContainer");
+
+    const videos = {
+      idle: "videos/idle.mp4",
+      talking: "videos/talking.mp4"
+    };
+
+    const systemIntro = "Salam, sizə necə kömək edə bilərəm?";
+    const misunderstood = "Sizi başa düşmədim.";
+    const followup = "Başqa necə kömək edə bilərəm?";
+
+    let isActive = false;
+
+    function playVideo(src, loop = false) {
+      return new Promise(resolve => {
+        video.src = src;
+        video.loop = loop;
+        video.onended = () => resolve();
+        video.play();
+      });
+    }
+
+    function speak(text) {
+      return new Promise(resolve => {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "az-AZ";
+        utter.onend = resolve;
+        speechSynthesis.speak(utter);
+      });
+    }
+
     async function startAssistant() {
-      document.getElementById("status").innerText = "Danışın...";
-      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      recognition.lang = "az-AZ";
-      recognition.interimResults = false;
+      if (isActive) return;
+      isActive = true;
+      container.style.display = "block";
 
-      recognition.onresult = async (event) => {
-        const text = event.results[0][0].transcript;
-        document.getElementById("status").innerText = "Axtarılır: " + text;
+      await playVideo(videos.talking);
+      await speak(systemIntro);
 
+      await idleAndListen();
+    }
+
+    async function idleAndListen() {
+      await playVideo(videos.idle, true);
+
+      const userSpeech = await recordVoice(5000); // 5 saniyəlik dinləmə
+
+      if (!userSpeech) {
+        await respondWithText(misunderstood, false);
+        isActive = false;
+        container.style.display = "none";
+        return;
+      }
+
+      const reply = await getGPTResponse(userSpeech);
+
+      if (!reply || reply.toLowerCase().includes("başa düşmədim")) {
+        await respondWithText(misunderstood, false);
+        isActive = false;
+        container.style.display = "none";
+        return;
+      }
+
+      await respondWithText(reply, true);
+
+      const follow = await respondWithText(followup, true);
+
+      const followUpSpeech = await recordVoice(5000);
+      if (!followUpSpeech) {
+        isActive = false;
+        container.style.display = "none";
+        return;
+      } else {
+        await idleAndListen(); // Yenidən dinləməyə qayıt
+      }
+    }
+
+    async function respondWithText(text, continueLoop = true) {
+      await playVideo(videos.talking);
+      await speak(text);
+      if (!continueLoop) {
+        await playVideo(videos.idle, true);
+      }
+    }
+
+    async function getGPTResponse(text) {
+      try {
         const res = await fetch("/ask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text })
         });
-
         const data = await res.json();
-        document.getElementById("status").innerText = "Cavab: " + data.reply;
-
-        // Play TTS audio (OpenAI voice)
-        const audioRes = await fetch("/speak", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: data.reply })
-        });
-
-        const audioBlob = await audioRes.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        audio.play();
-      };
-
-      recognition.onerror = (e) => {
-        document.getElementById("status").innerText = "Xəta: " + e.error;
-      };
-
-      recognition.start();
+        return data.reply;
+      } catch (e) {
+        return null;
+      }
     }
+
+    function recordVoice(duration) {
+      return new Promise((resolve, reject) => {
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = "az-AZ";
+        recognition.interimResults = false;
+        recognition.continuous = false;
+
+        let timeout = setTimeout(() => {
+          recognition.stop();
+          resolve(null);
+        }, duration);
+
+        recognition.onresult = (event) => {
+          clearTimeout(timeout);
+          const transcript = event.results[0][0].transcript;
+          resolve(transcript);
+        };
+
+        recognition.onerror = (event) => {
+          clearTimeout(timeout);
+          resolve(null);
+        };
+
+        recognition.start();
+      });
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key.toLowerCase() === "f") {
+        startAssistant();
+      }
+    });
   </script>
 </body>
 </html>
