@@ -1,14 +1,14 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const { Configuration, OpenAIApi } = require("openai");
-const app = express();
 
+const app = express();
 app.use(bodyParser.json());
 app.use(express.static(__dirname));
 
-// ⛔ Açarını bura yaz — lakin bunu yalnız test üçün et
+// API açarını buraya yaz (öz şəxsi açarını)
 const openai = new OpenAIApi(new Configuration({
-  apiKey: "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"
+  apiKey: "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"  // <- BURAYA SƏNİN OPENAI API AÇARIN
 }));
 
 // ChatGPT cavabı
@@ -23,28 +23,12 @@ app.post("/ask", async (req, res) => {
     const reply = chat.data.choices[0].message.content;
     res.json({ reply });
   } catch (err) {
-    console.error("Chat error:", err);
+    console.error("GPT xətası:", err.message);
     res.json({ reply: "Bağışlayın, cavab verə bilmədim." });
   }
 });
 
-// TTS cavabı
-app.post("/speak", async (req, res) => {
-  try {
-    const text = req.body.text;
-    const speech = await openai.createSpeech({
-      model: "tts-1",
-      voice: "nova",
-      input: text
-    }, { responseType: 'stream' });
-
-    res.setHeader("Content-Type", "audio/mpeg");
-    speech.data.pipe(res);
-  } catch (err) {
-    console.error("TTS error:", err);
-    res.status(500).send("TTS xətası.");
-  }
-});
-
 const PORT = 3000;
-app.listen(PORT, () => console.log(`✅ Server başladı: http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Server hazırdır: http://localhost:${PORT}`);
+});
