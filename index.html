@@ -51,12 +51,20 @@
       });
     }
 
-    function speak(text) {
-      return new Promise(resolve => {
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = "az-AZ";
-        utter.onend = resolve;
-        speechSynthesis.speak(utter);
+    async function speak(text) {
+      return new Promise(async (resolve) => {
+        const res = await fetch("/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+
+        const blob = await res.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+
+        audio.onended = () => resolve();
+        audio.play();
       });
     }
 
@@ -74,7 +82,7 @@
     async function idleAndListen() {
       await playVideo(videos.idle, true);
 
-      const userSpeech = await recordVoice(5000); // 5 saniyəlik dinləmə
+      const userSpeech = await recordVoice(5000);
 
       if (!userSpeech) {
         await respondWithText(misunderstood, false);
@@ -93,8 +101,7 @@
       }
 
       await respondWithText(reply, true);
-
-      const follow = await respondWithText(followup, true);
+      await respondWithText(followup, true);
 
       const followUpSpeech = await recordVoice(5000);
       if (!followUpSpeech) {
@@ -102,7 +109,7 @@
         container.style.display = "none";
         return;
       } else {
-        await idleAndListen(); // Yenidən dinləməyə qayıt
+        await idleAndListen();
       }
     }
 
@@ -129,7 +136,7 @@
     }
 
     function recordVoice(duration) {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
         recognition.lang = "az-AZ";
         recognition.interimResults = false;
@@ -146,7 +153,7 @@
           resolve(transcript);
         };
 
-        recognition.onerror = (event) => {
+        recognition.onerror = () => {
           clearTimeout(timeout);
           resolve(null);
         };
